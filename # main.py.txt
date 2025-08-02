@@ -1,0 +1,71 @@
+# main.py
+
+# これは Discord の DM で受け取ったメッセージやファイルを
+# 指定されたチャンネルに転送する Bot です。
+# 先頭にチャンネル名（#general など）を書いてから本文や画像を送ってください。
+
+import discord
+import re
+import os
+
+# Botの動作に必要な設定（メッセージの中身取得など）
+intents = discord.Intents.default()
+intents.message_content = True
+intents.guilds = True
+
+client = discord.Client(intents=intents)
+
+# 環境変数からBotトークンとサーバーIDを取得
+BOT_TOKEN = os.environ['BOT_TOKEN']
+GUILD_ID = int(os.environ['GUILD_ID'])
+
+@client.event
+async def on_ready():
+    print(f'✅ Botが起動しました: {client.user}')
+
+@client.event
+async def on_message(message):
+    # 自分の発言は無視
+    if message.author == client.user:
+        return
+
+    # DMのみ対応
+    if isinstance(message.channel, discord.DMChannel):
+        # チャンネル名かIDを最初の行から取得
+        match = re.match(r'(?:<#?(\d+)>|#?([\w\-]+))', message.content)
+        if not match:
+            await message.channel.send("❗先頭に #チャンネル名 を書いてください。")
+            return
+
+        # チャンネルID取得（IDまたは名前から）
+        channel_id = None
+        if match.group(1):
+            channel_id = int(match.group(1))
+        elif match.group(2):
+            guild = client.get_guild(GUILD_ID)
+            for ch in guild.text_channels:
+                if ch.name == match.group(2):
+                    channel_id = ch.id
+                    break
+
+        if not channel_id:
+            await message.channel.send("❗指定されたチャンネルが見つかりません。")
+            return
+
+        # チャンネルオブジェクトを取得
+        channel = client.get_channel(channel_id)
+        if not channel:
+            await message.channel.send("❗チャンネルの取得に失敗しました。")
+            return
+
+        # 本文の2行目以降＋添付ファイル
+        lines = message.content.split('\n')
+        content = '\n'.join(lines[1:]) if len(lines) > 1 else ""
+        files = [await a.to_file() for a in message.attachments]
+
+        # チャンネルに転送
+        await channel.send(content or "（本文なし）", files=files)
+        await message.channel.send(f"✅ {channel.mention} に転送しました。")
+
+# Botを起動
+client.run(BOT_TOKEN)
